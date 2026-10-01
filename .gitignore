@@ -1,0 +1,11 @@
+.DS_Store
+.tools/
+.build/
+dist/
+.env
+*.xcuserstate
+
+*.p12
+*.p8
+.env.*
+!.env.example
