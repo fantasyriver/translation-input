@@ -44,7 +44,7 @@ import TranslationCore
   label("唤起快捷键（录制后立即生效）", 292)
   recorder.frame = NSRect(x: 24, y: 254, width: 235, height: 32); recorder.bezelStyle = .rounded; recorder.target = self; recorder.action = #selector(record); view.addSubview(recorder)
   let permission = NSButton(title: "开启自动回填权限…", target: self, action: #selector(permissionClick)); permission.bezelStyle = .rounded; permission.frame = NSRect(x: 339, y: 254, width: 257, height: 32); view.addSubview(permission)
-  let note = NSTextField(wrappingLabelWithString: "确认翻译时，文字由本机直接发送到所选 API 地址，由对应提供商处理并计费。译入没有中转服务器，也不保存翻译历史。自动回填需辅助功能权限；译文会保留在剪贴板。")
+  let note = NSTextField(wrappingLabelWithString: "确认翻译后，文字直接发送至所选 API 地址，由提供商处理并计费。API Key 保存在本机钥匙串。自动回填需辅助功能权限，译文会保留在剪贴板。")
   note.frame = NSRect(x: 24, y: 160, width: 572, height: 76); note.font = .systemFont(ofSize: 12); note.textColor = .secondaryLabelColor; view.addSubview(note)
   status.frame = NSRect(x: 24, y: 68, width: 572, height: 80); status.font = .systemFont(ofSize: 12); view.addSubview(status)
   let open = NSButton(title: "打开输入框", target: self, action: #selector(openInput)); open.bezelStyle = .rounded; open.frame = NSRect(x: 24, y: 20, width: 130, height: 32); view.addSubview(open)

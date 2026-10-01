@@ -101,7 +101,7 @@ import TranslationCore
   guard let endpoint = try? configuration.validated(apiKey: apiKey) else { settings.show(); return }
   if Preferences.consentEndpoint != configuration.credentialAccount {
    let alert = NSAlert(); alert.messageText = "允许发送文字进行翻译？"
-   alert.informativeText = "确认后，你输入的文字将发送至 \(endpoint.host ?? "配置的模型服务")，使用模型 \(configuration.model)。请求由本机直接发出，不经过译入服务器；API 费用由提供商按你的账户计费。应用不保存翻译历史。"
+   alert.informativeText = "确认后，你输入的文字将发送至 \(endpoint.host ?? "配置的模型服务")，使用模型 \(configuration.model)。API 费用由提供商按你的账户计费。原文和译文仅在本次运行期间保存在内存中。"
    alert.addButton(withTitle: "允许并翻译"); alert.addButton(withTitle: "取消")
    guard alert.runModal() == .alertFirstButtonReturn else { return }; Preferences.consentEndpoint = configuration.credentialAccount
   }
