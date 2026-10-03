@@ -2,6 +2,39 @@ import Foundation
 import Darwin
 import TranslationCore
 final class CoreTests {
+ @MainActor func testInlineDeliveryAndClipboardFallback() async throws {
+  var events = [String]()
+  let text = "Hello 🌏"
+  let outcome = try await TranslationDelivery.deliver(text, canAutoFill: false, isValid: { true },
+   show: { events.append("show:" + $0) }, copy: { events.append("copy:" + $0); return true },
+   insert: { _ in fatalError("Disabled auto-fill must not attempt insertion") })
+  expectEqual(events, ["show:" + text, "copy:" + text]); expectTrue(outcome.copied); expectEqual(outcome.insertion, .skipped)
+  events = []
+  let inserted = try await TranslationDelivery.deliver(text, canAutoFill: true, isValid: { true },
+   show: { _ in events.append("show") }, copy: { _ in events.append("copy"); return true }, insert: { _ in events.append("insert") })
+  expectEqual(events, ["show", "copy", "insert"]); expectEqual(inserted.insertion, .sent)
+  let fallback = try await TranslationDelivery.deliver(text, canAutoFill: true, isValid: { true },
+   show: { _ in }, copy: { _ in true }, insert: { _ in throw URLError(.cannotConnectToHost) })
+  expectTrue(fallback.copied); expectEqual(fallback.insertion, .failed)
+  let clipboardFailure = try await TranslationDelivery.deliver(text, canAutoFill: false, isValid: { true },
+   show: { _ in }, copy: { _ in false }, insert: { _ in })
+  expectFalse(clipboardFailure.copied)
+ }
+ @MainActor func testStaleDeliveryHasNoSideEffects() async throws {
+  var touched = false
+  do {
+   _ = try await TranslationDelivery.deliver("stale", canAutoFill: true, isValid: { false },
+    show: { _ in touched = true }, copy: { _ in touched = true; return true }, insert: { _ in touched = true })
+   fatalError("Stale result must be rejected")
+  } catch is CancellationError {} catch { throw error }
+  expectFalse(touched)
+  var current = true
+  do {
+   _ = try await TranslationDelivery.deliver("valid", canAutoFill: true, isValid: { current },
+    show: { _ in }, copy: { _ in true }, insert: { _ in current = false; throw CancellationError() })
+   fatalError("Cancellation must not become completion feedback")
+  } catch is CancellationError {} catch { throw error }
+ }
  func testShortcutAppliesWithoutServiceConfiguration() {
   let commandSpace = HotKey(keyCode: 49, modifiers: 256, label: "⌘ Space")
   var registered: HotKey?; var persisted: HotKey?
@@ -140,7 +173,8 @@ func expectThrowsError<T>(_ body: @autoclosure () throws -> T) { do { _ = try bo
   tests.testCanceledResponseCannotInsert(); tests.testInsertionOnlyOnce(); tests.testNewSessionInvalidatesOldRequest()
   tests.testEndpointPolicy(); try tests.testProviderRequests(); try tests.testProviderResponses(); try tests.testCredentialScopeAndProfiles()
   tests.testShortcutAppliesWithoutServiceConfiguration(); tests.testFailedShortcutKeepsEffectiveValue(); tests.testSystemShortcutConflictUsesEnabledActualCombination()
-  print("PASS: 10 core behavior groups")
+  try await tests.testInlineDeliveryAndClipboardFallback(); try await tests.testStaleDeliveryHasNoSideEffects()
+  print("PASS: 12 core behavior groups")
   if CommandLine.arguments.contains("--integration") { try await IntegrationChecks.run() }
  }
 }

@@ -122,9 +122,8 @@ import TranslationCore
  }
  @objc private func openInput() { openPanel?() }
  @objc private func permissionClick() {
-  let options = [kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String: true] as CFDictionary
-  _ = AXIsProcessTrustedWithOptions(options)
-  status.stringValue = "请在系统设置 → 隐私与安全性 → 辅助功能中开启“译入”。开发版重建后可能需要重新授权。"
+  status.textColor = UI.muted
+  status.stringValue = AutoFillSettings.open() ? "在辅助功能中开启“译入”，下次唤起时生效。" : "请打开系统设置 → 隐私与安全性 → 辅助功能。"
  }
  @objc private func record() {
   stopRecording()
@@ -161,7 +160,7 @@ import TranslationCore
    status.stringValue = "已保存：\(configuration.provider.title) · \(configuration.model)。" + (shortcutError?() ?? "")
   } catch { status.textColor = UI.warning; status.stringValue = error.localizedDescription }
  }
- private func refreshPermission() { permissionState.stringValue = AXIsProcessTrusted() ? "辅助功能已授权" : "需要辅助功能权限" }
+ private func refreshPermission() { permissionState.stringValue = AutoFillSettings.isEnabled ? "辅助功能已授权" : "需要辅助功能权限" }
  func windowDidBecomeKey(_ notification: Notification) { refreshPermission() }
  func windowDidResignKey(_ notification: Notification) { stopRecording() }
  func windowWillClose(_ notification: Notification) { stopRecording() }

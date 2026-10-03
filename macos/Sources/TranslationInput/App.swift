@@ -13,7 +13,6 @@ import TranslationCore
  private var inserting = false
  private var busy = false
  private var resumeDraftFromSettings = false
- private var clearOnNextOpen = false
  private var lastResult = ""
  private var panel: InputPanel!
  private let input = ComposerTextView()
@@ -22,8 +21,9 @@ import TranslationCore
  private let status = NSTextField(wrappingLabelWithString: "")
  private let progress = NSProgressIndicator()
  private let statusIcon = NSImageView()
- private let resultWindow = ResultController()
- private let copy = ActionButton("查看译文", target: nil, action: nil)
+ private let composer = NSView(frame: NSRect(x: 0, y: 0, width: 720, height: 392))
+ private let resultView = TranslationResultView(frame: NSRect(x: 24, y: 96, width: 672, height: 190))
+ private let autoFill = ActionButton("开启自动回填…", target: nil, action: nil)
  private let count = NSTextField(labelWithString: "0 / 10,000")
  private let modelBadge = NSTextField(labelWithString: "")
 
@@ -60,7 +60,8 @@ import TranslationCore
   panel.title = "译入"; UI.window(panel); panel.level = .floating
   panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]; panel.isReleasedWhenClosed = false
   panel.hidesOnDeactivate = false; panel.delegate = self
-  let content = panel.contentView!
+  let root = panel.contentView!; root.addSubview(composer)
+  let content = composer
   let mark = Surface(frame: NSRect(x: 24, y: 302, width: 40, height: 40), color: UI.accent, radius: 12); content.addSubview(mark)
   UI.symbol("character.bubble", in: mark, frame: NSRect(x: 9, y: 9, width: 22, height: 22), color: UI.accentInk)
   UI.label("译入", in: content, frame: NSRect(x: 76, y: 319, width: 150, height: 24), size: 20, weight: .semibold)
@@ -79,7 +80,7 @@ import TranslationCore
   input.textContainerInset = NSSize(width: 2, height: 6)
   input.isVerticallyResizable = true; input.isHorizontallyResizable = false; input.autoresizingMask = [.width]
   input.textContainer?.widthTracksTextView = true; input.textContainer?.containerSize = NSSize(width: 446, height: CGFloat.greatestFiniteMagnitude)
-  input.submit = { [weak self] in self?.translate() }; input.dismiss = { [weak self] in self?.dismiss() }; input.changed = { [weak self] in self?.updateInputState() }
+  input.submit = { [weak self] in self?.translate() }; input.dismiss = { [weak self] in self?.dismiss() }; input.changed = { [weak self] in self?.updateInputState(); self?.resultView.markPrevious() }
   input.setAccessibilityLabel("待翻译的原文"); input.setAccessibilityHelp("支持任意输入法。Command Return 翻译，Return 换行，Escape 关闭。")
   scroll.documentView = input; content.addSubview(scroll)
   count.frame = NSRect(x: 312, y: 106, width: 164, height: 16); count.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular); count.textColor = UI.muted; count.alignment = .right; content.addSubview(count)
@@ -92,11 +93,15 @@ import TranslationCore
   submit.frame = NSRect(x: 514, y: 145, width: 182, height: 46); submit.target = self; submit.action = #selector(translate); content.addSubview(submit)
   UI.label("⌘ ↵ 翻译   ·   Esc 关闭", in: content, frame: NSRect(x: 517, y: 119, width: 179, height: 17), size: 10, color: UI.muted)
   UI.label("↵ 换行", in: content, frame: NSRect(x: 42, y: 106, width: 160, height: 16), size: 10, color: UI.muted)
-  let separator = Surface(frame: NSRect(x: 24, y: 77, width: 672, height: 1), color: UI.line, radius: 0); content.addSubview(separator)
-  statusIcon.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil); statusIcon.contentTintColor = UI.muted; statusIcon.frame = NSRect(x: 24, y: 43, width: 16, height: 16); content.addSubview(statusIcon)
-  progress.style = .spinning; progress.controlSize = .small; progress.frame = NSRect(x: 25, y: 43, width: 16, height: 16); progress.isDisplayedWhenStopped = false; content.addSubview(progress)
-  status.frame = NSRect(x: 48, y: 18, width: 510, height: 43); status.font = .systemFont(ofSize: 11); status.textColor = UI.muted; content.addSubview(status)
-  copy.frame = NSRect(x: 574, y: 26, width: 122, height: 34); copy.compact = true; copy.target = self; copy.action = #selector(showResult); copy.isHidden = true; content.addSubview(copy)
+  resultView.isHidden = true; root.addSubview(resultView)
+  resultView.onCopy = { [weak self] in self?.copyResult() }
+  resultView.onDismiss = { [weak self] in self?.dismiss() }
+  let separator = Surface(frame: NSRect(x: 24, y: 77, width: 672, height: 1), color: UI.line, radius: 0); root.addSubview(separator)
+  statusIcon.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil); statusIcon.contentTintColor = UI.muted; statusIcon.frame = NSRect(x: 24, y: 43, width: 16, height: 16); root.addSubview(statusIcon)
+  progress.style = .spinning; progress.controlSize = .small; progress.frame = NSRect(x: 25, y: 43, width: 16, height: 16); progress.isDisplayedWhenStopped = false; root.addSubview(progress)
+  status.frame = NSRect(x: 48, y: 18, width: 430, height: 43); status.font = .systemFont(ofSize: 11); status.textColor = UI.muted; root.addSubview(status)
+  autoFill.frame = NSRect(x: 498, y: 26, width: 198, height: 34); autoFill.compact = true; autoFill.target = self; autoFill.action = #selector(configureAutoFill); root.addSubview(autoFill)
+  refreshAutoFill()
   updateInputState()
  }
  private func updateInputState() {
@@ -106,27 +111,27 @@ import TranslationCore
   input.needsDisplay = true
  }
 
- @objc private func languageChanged() { Preferences.language = language.selectedItem?.representedObject as? String ?? "en" }
+ @objc private func languageChanged() { Preferences.language = language.selectedItem?.representedObject as? String ?? "en"; resultView.markPrevious() }
  @objc private func openFromMenu() { if !panel.isVisible { openPanel() } else { NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil) } }
  private func togglePanel() { if panel.isKeyWindow { dismiss() } else { openPanel() } }
  private func openPanel(captureTarget: Bool = true) {
   cancelWork()
   if captureTarget { target = InsertionTarget.capture() }
   resumeDraftFromSettings = false; flowID = UUID()
-  if clearOnNextOpen { input.string = ""; clearOnNextOpen = false }
   updateInputState()
   modelBadge.stringValue = Preferences.llm.current.model
   modelBadge.toolTip = "\(Preferences.llm.current.provider.title) · \(Preferences.llm.current.model)"
   status.textColor = UI.muted
-  status.stringValue = target.map { "翻译后回填到 \($0.app.localizedName ?? "原应用")，译文保留在剪贴板。" } ?? "输入你的想法，翻译后即可复制使用。"
-  copy.isHidden = lastResult.isEmpty
+  refreshAutoFill()
+  status.stringValue = AutoFillSettings.isEnabled && target?.permitsText == true ? "翻译后回填到 \(target?.app.localizedName ?? "原应用")，并复制译文。" : "翻译后自动复制译文，可直接粘贴使用。"
   let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main!
   let frame = screen.visibleFrame
-  panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: frame.midY - panel.frame.height / 2 + min(120, frame.height * 0.1)))
+  panel.setFrameOrigin(NSPoint(x: frame.midX - panel.frame.width / 2, y: min(frame.maxY - panel.frame.height, max(frame.minY, frame.midY - panel.frame.height / 2 + min(120, frame.height * 0.1)))))
   NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(input)
  }
  private func setBusy(_ value: Bool) {
   busy = value; submit.title = value ? "取消翻译" : "翻译 ↗"; input.isEditable = !value; language.isEnabled = !value
+  autoFill.isEnabled = !value
   updateInputState()
   statusIcon.isHidden = value
   if value { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }
@@ -147,42 +152,64 @@ import TranslationCore
    guard alert.runModal() == .alertFirstButtonReturn else { return }; Preferences.consentEndpoint = configuration.credentialAccount
   }
   let text = input.string; let code = Preferences.language; let ticket = session.begin(); let flow = flowID; let savedTarget = target
+  resultView.markPrevious()
+  let translatedLanguage = language.titleOfSelectedItem ?? code
   setBusy(true); status.textColor = UI.accent; status.stringValue = "正在用 \(configuration.model) 翻译…"
   task = Task { [weak self] in
    guard let self else { return }
    do {
     let result = try await self.client.translate(text: text, language: code, configuration: configuration, apiKey: apiKey)
     guard !Task.isCancelled, self.flowID == flow, self.session.consume(ticket) else { return }
-    self.lastResult = result; self.copy.isHidden = false
-    self.inserting = true; self.panel.orderOut(nil)
-    do {
-     try await InsertionCoordinator.insert(result, into: savedTarget, isValid: { self.flowID == flow })
-     guard self.flowID == flow else { return }
-     self.clearOnNextOpen = true; self.status.stringValue = "已发出粘贴操作，译文保留在剪贴板。"
-    } catch {
-     guard self.flowID == flow, !Task.isCancelled else { return }
-     self.status.textColor = UI.warning; self.status.stringValue = error.localizedDescription
-     self.panel.orderFrontRegardless() // Do not steal focus if the user is working elsewhere.
+    self.inserting = true
+    let outcome = try await TranslationDelivery.deliver(result,
+     canAutoFill: AutoFillSettings.isEnabled && savedTarget?.permitsText == true,
+     isValid: { self.flowID == flow },
+     show: { self.presentResult($0, language: translatedLanguage) },
+     copy: { self.writeClipboard($0) },
+     insert: { try await InsertionCoordinator.insert($0, into: savedTarget, isValid: { self.flowID == flow }) })
+    guard self.flowID == flow, !Task.isCancelled else { return }
+    self.inserting = false; self.setBusy(false); self.refreshAutoFill()
+    self.status.textColor = outcome.copied ? UI.accent : UI.warning
+    switch outcome.insertion {
+    case .sent: self.status.stringValue = "已发送回填操作，译文已复制。"
+    case .skipped: self.status.stringValue = outcome.copied ? "翻译完成，译文已自动复制。" : "翻译完成，复制失败，请选择下方译文手动复制。"
+    case .failed: self.status.stringValue = outcome.copied ? "译文已复制，请在目标位置粘贴。" : "自动回填和复制未完成，请选择下方译文手动复制。"
     }
-    self.inserting = false; self.setBusy(false)
+
    } catch {
     guard self.flowID == flow, !Task.isCancelled else { return }
-    self.session.cancel(); self.setBusy(false)
+    self.session.cancel(); self.inserting = false; self.setBusy(false)
     self.status.textColor = UI.warning
     self.status.stringValue = (error as? URLError)?.code == .timedOut ? "翻译超时，原文已保留。" : error.localizedDescription
    }
   }
  }
+ private func presentResult(_ text: String, language: String) {
+  lastResult = text; resultView.show(text: text, language: language)
+  if resultView.isHidden {
+   let old = panel.frame
+   composer.setFrameOrigin(NSPoint(x: 0, y: 204))
+   var expanded = NSRect(x: old.minX, y: old.minY - 204, width: old.width, height: old.height + 204)
+   if let screen = panel.screen { expanded.origin.y = max(screen.visibleFrame.minY, expanded.minY) }
+   panel.setFrame(expanded, display: true)
+   resultView.isHidden = false
+  }
+ }
+ private func writeClipboard(_ text: String) -> Bool {
+  NSPasteboard.general.clearContents(); return NSPasteboard.general.setString(text, forType: .string)
+ }
  @objc private func copyResult() {
-  guard !lastResult.isEmpty else { NSSound.beep(); return }
-  NSPasteboard.general.clearContents(); NSPasteboard.general.setString(lastResult, forType: .string)
-  status.stringValue = "译文已复制。"
- }
- @objc private func showResult() {
   guard !lastResult.isEmpty else { return }
-  resultWindow.show(text: lastResult)
-
+  let copied = writeClipboard(lastResult)
+  status.textColor = copied ? UI.accent : UI.warning
+  status.stringValue = copied ? "译文已复制。" : "复制失败，请选择译文手动复制。"
  }
+ private func refreshAutoFill() { autoFill.title = AutoFillSettings.isEnabled ? "自动回填已开启 · 设置…" : "开启自动回填…" }
+ @objc private func configureAutoFill() {
+  status.textColor = UI.muted
+  status.stringValue = AutoFillSettings.open() ? "在辅助功能中开启“译入”，下次唤起时生效。" : "请打开系统设置 → 隐私与安全性 → 辅助功能。"
+ }
+ func windowDidBecomeKey(_ notification: Notification) { if notification.object as? NSWindow === panel { refreshAutoFill() } }
  @objc private func showSettings() {
   resumeDraftFromSettings = panel.isVisible
   cancelWork(); panel.orderOut(nil); settings.show()

@@ -1,35 +1,34 @@
 import AppKit
 
-@MainActor final class ResultController: NSWindowController {
+/// A selectable translation card embedded in the composer.
+@MainActor final class TranslationResultView: NSView {
  private let text = ComposerTextView()
- private let feedback = NSTextField(labelWithString: "选择文字，或复制整段译文。")
- init() {
-  let panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 600, height: 378), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-  panel.title = "译入 · 翻译结果"; panel.level = .floating; panel.isReleasedWhenClosed = false
-  panel.hidesOnDeactivate = false; UI.window(panel)
-  super.init(window: panel)
-  let view = panel.contentView!
-  UI.symbol("checkmark.bubble", in: view, frame: NSRect(x: 26, y: 302, width: 27, height: 27))
-  UI.label("翻译结果", in: view, frame: NSRect(x: 66, y: 302, width: 400, height: 29), size: 22, weight: .semibold)
-  let surface = Surface(frame: NSRect(x: 24, y: 88, width: 552, height: 194), bordered: true); view.addSubview(surface)
-  let scroll = NSScrollView(frame: NSRect(x: 36, y: 101, width: 528, height: 168)); scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.drawsBackground = false
+ private let heading = NSTextField(labelWithString: "译文")
+ private let copy = ActionButton("复制译文", target: nil, action: nil)
+ var onCopy: (() -> Void)?
+ var onDismiss: (() -> Void)?
+ var string: String { text.string }
+ override init(frame: NSRect) {
+  super.init(frame: frame)
+  let surface = Surface(frame: bounds, bordered: true); surface.autoresizingMask = [.width, .height]; addSubview(surface)
+  UI.symbol("checkmark.bubble", in: self, frame: NSRect(x: 18, y: 151, width: 18, height: 18))
+  heading.frame = NSRect(x: 45, y: 148, width: 460, height: 22); heading.font = .systemFont(ofSize: 12, weight: .semibold); heading.textColor = UI.accent; addSubview(heading)
+  copy.frame = NSRect(x: bounds.width - 136, y: 142, width: 118, height: 32); copy.compact = true; copy.target = self; copy.action = #selector(copyText); addSubview(copy)
+  let scroll = NSScrollView(frame: NSRect(x: 13, y: 16, width: bounds.width - 26, height: 113))
+  scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.drawsBackground = false
   text.frame = scroll.bounds; text.isEditable = false; text.isRichText = false; text.font = .systemFont(ofSize: 17); text.textColor = UI.ink
   text.drawsBackground = false; text.textContainerInset = NSSize(width: 3, height: 5); text.isVerticallyResizable = true; text.isHorizontallyResizable = false; text.autoresizingMask = [.width]
-  text.textContainer?.widthTracksTextView = true; text.textContainer?.containerSize = NSSize(width: 528, height: CGFloat.greatestFiniteMagnitude)
-  text.setAccessibilityLabel("翻译结果"); text.dismiss = { [weak self] in self?.close() }; text.submit = { [weak self] in self?.copyText() }
-  scroll.documentView = text; view.addSubview(scroll)
-  feedback.frame = NSRect(x: 28, y: 35, width: 378, height: 20); feedback.font = .systemFont(ofSize: 11); feedback.textColor = UI.muted; view.addSubview(feedback)
-  let copy = ActionButton("复制译文", primary: true, target: self, action: #selector(copyText)); copy.frame = NSRect(x: 428, y: 26, width: 148, height: 40); view.addSubview(copy)
+  text.textContainer?.widthTracksTextView = true; text.textContainer?.containerSize = NSSize(width: scroll.bounds.width, height: CGFloat.greatestFiniteMagnitude)
+  text.setAccessibilityLabel("翻译结果"); text.dismiss = { [weak self] in self?.onDismiss?() }; text.submit = { [weak self] in self?.onCopy?() }
+  scroll.documentView = text; addSubview(scroll)
  }
  required init?(coder: NSCoder) { fatalError("init(coder:) is unavailable") }
- func show(text value: String) {
+ func show(text value: String, language: String) {
   let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 5
-  text.textStorage?.setAttributedString(NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: 17), .foregroundColor: UI.ink, .paragraphStyle: paragraph])); text.setSelectedRange(NSRange(location: 0, length: 0)); text.scrollRangeToVisible(NSRange(location: 0, length: 0))
-  feedback.stringValue = "选择文字，或复制整段译文。"; feedback.textColor = UI.muted
-  window?.center(); showWindow(nil); NSApp.activate(ignoringOtherApps: true); window?.makeFirstResponder(text)
+  text.textStorage?.setAttributedString(NSAttributedString(string: value, attributes: [.font: NSFont.systemFont(ofSize: 17), .foregroundColor: UI.ink, .paragraphStyle: paragraph]))
+  text.setSelectedRange(NSRange(location: 0, length: 0)); text.scrollRangeToVisible(NSRange(location: 0, length: 0))
+  heading.stringValue = "译文 · " + language; heading.textColor = UI.accent
  }
- @objc private func copyText() {
-  NSPasteboard.general.clearContents(); NSPasteboard.general.setString(text.string, forType: .string)
-  feedback.stringValue = "译文已复制。"; feedback.textColor = UI.accent
- }
+ func markPrevious() { if !text.string.isEmpty { heading.stringValue = "上次译文"; heading.textColor = UI.muted } }
+ @objc private func copyText() { onCopy?() }
 }

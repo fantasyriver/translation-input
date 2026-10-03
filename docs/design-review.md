@@ -41,11 +41,19 @@
 
 ![译文窗口，离线固定样例](images/result.png)
 
-## 复现译文窗口检查
+## 0.4 内联结果（2026-10-03）
+
+译文直接显示在原文下方，首次结果展开窗口，重复翻译复用同一区域；自动复制并显示状态，底部按钮直达辅助功能设置。编辑原文或切换语言时标记“上次译文”。
+
+![内联译文 · 浅色](images/inline-light.png)
+
+![内联译文 · 深色](images/inline-dark.png)
+
+## 复现内联译文检查
 
 ```bash
 ./scripts/build-ui-review.sh
 open dist/UIReview.app
 ```
 
-UIReview 使用独立应用标识，直接编译生产的配色、文本控件和结果窗口，显示固定样例。`Command + D` 切换外观，`Command + Return` 复制译文，`Esc` 关闭窗口，`Command + Q` 退出。
+UIReview 使用独立应用标识，编译生产布局、结果展示和交付流程，凭据接口使用离线替身。点击翻译或按 `Command + Return` 展示固定样例并自动复制，`Command + D` 切换外观，`Esc` 关闭窗口，`Command + Q` 退出。
