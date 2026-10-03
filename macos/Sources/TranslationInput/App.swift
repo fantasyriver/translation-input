@@ -12,20 +12,28 @@ import TranslationCore
  private var target: InsertionTarget?
  private var inserting = false
  private var busy = false
+ private var resumeDraftFromSettings = false
  private var clearOnNextOpen = false
  private var lastResult = ""
  private var panel: InputPanel!
  private let input = ComposerTextView()
  private let language = NSPopUpButton(frame: .zero, pullsDown: false)
- private let submit = NSButton(title: "确定", target: nil, action: nil)
+ private let submit = ActionButton("翻译 ↗", primary: true, target: nil, action: nil)
  private let status = NSTextField(wrappingLabelWithString: "")
  private let progress = NSProgressIndicator()
- private let copy = NSButton(title: "查看译文…", target: nil, action: nil)
+ private let statusIcon = NSImageView()
+ private let resultWindow = ResultController()
+ private let copy = ActionButton("查看译文", target: nil, action: nil)
+ private let count = NSTextField(labelWithString: "0 / 10,000")
+ private let modelBadge = NSTextField(labelWithString: "")
 
  func applicationDidFinishLaunching(_ notification: Notification) {
   NSApp.setActivationPolicy(.accessory)
   configureMenu(); configurePanel()
-  settings.openPanel = { [weak self] in self?.openPanel() }
+  settings.openPanel = { [weak self] in
+   guard let self else { return }
+   self.openPanel(captureTarget: !self.resumeDraftFromSettings)
+  }
   hotKey.onPress = { [weak self] in self?.togglePanel() }
   settings.saveShortcut = { [weak self] key in self?.hotKey.register(key) ?? -1 }
   settings.shortcutError = { [weak self] in self?.hotKey.lastError }
@@ -48,38 +56,69 @@ import TranslationCore
   entry("设置…", #selector(showSettings), ","); entry("退出译入", #selector(quit), "q"); item.menu = menu
  }
  private func configurePanel() {
-  panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 640, height: 320), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
-  panel.title = "译入"; panel.titlebarAppearsTransparent = true; panel.level = .floating
+  panel = InputPanel(contentRect: NSRect(x: 0, y: 0, width: 720, height: 392), styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: false)
+  panel.title = "译入"; UI.window(panel); panel.level = .floating
   panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary]; panel.isReleasedWhenClosed = false
   panel.hidesOnDeactivate = false; panel.delegate = self
   let content = panel.contentView!
-  let heading = NSTextField(labelWithString: "译入"); heading.font = .systemFont(ofSize: 18, weight: .semibold); heading.frame = NSRect(x: 24, y: 267, width: 200, height: 24); content.addSubview(heading)
-  let scroll = NSScrollView(frame: NSRect(x: 24, y: 128, width: 420, height: 128)); scroll.borderType = .bezelBorder; scroll.hasVerticalScroller = true
-  input.frame = NSRect(x: 0, y: 0, width: 418, height: 128); input.isRichText = false; input.isAutomaticQuoteSubstitutionEnabled = false; input.isAutomaticDashSubstitutionEnabled = false
-  input.font = .systemFont(ofSize: 16); input.textContainerInset = NSSize(width: 10, height: 10)
+  let mark = Surface(frame: NSRect(x: 24, y: 302, width: 40, height: 40), color: UI.accent, radius: 12); content.addSubview(mark)
+  UI.symbol("character.bubble", in: mark, frame: NSRect(x: 9, y: 9, width: 22, height: 22), color: UI.accentInk)
+  UI.label("译入", in: content, frame: NSRect(x: 76, y: 319, width: 150, height: 24), size: 20, weight: .semibold)
+  UI.label("让表达，自在发生。", in: content, frame: NSRect(x: 76, y: 299, width: 240, height: 18), size: 11, color: UI.muted)
+  modelBadge.frame = NSRect(x: 380, y: 315, width: 252, height: 18); modelBadge.font = .systemFont(ofSize: 11, weight: .medium); modelBadge.textColor = UI.muted; modelBadge.alignment = .right; modelBadge.lineBreakMode = .byTruncatingMiddle; content.addSubview(modelBadge)
+  let gear = NSButton(image: NSImage(systemSymbolName: "slider.horizontal.3", accessibilityDescription: "打开设置")!, target: self, action: #selector(showSettings))
+  gear.isBordered = false; gear.contentTintColor = UI.muted; gear.frame = NSRect(x: 656, y: 308, width: 36, height: 32); gear.toolTip = "模型与快捷键设置"; content.addSubview(gear)
+  let editor = Surface(frame: NSRect(x: 24, y: 96, width: 470, height: 190), bordered: true); content.addSubview(editor)
+  UI.label("原文", in: content, frame: NSRect(x: 42, y: 254, width: 60, height: 18), size: 12, weight: .semibold)
+  UI.label("自动识别语言", in: content, frame: NSRect(x: 89, y: 254, width: 180, height: 18), size: 11, color: UI.muted)
+  let scroll = NSScrollView(frame: NSRect(x: 36, y: 128, width: 446, height: 116)); scroll.borderType = .noBorder; scroll.hasVerticalScroller = true; scroll.autohidesScrollers = true; scroll.drawsBackground = false
+  input.frame = NSRect(x: 0, y: 0, width: 446, height: 116); input.isRichText = false; input.isAutomaticQuoteSubstitutionEnabled = false; input.isAutomaticDashSubstitutionEnabled = false
+  input.font = .systemFont(ofSize: 19); input.textColor = UI.ink; input.insertionPointColor = UI.accent; input.drawsBackground = false
+  let paragraph = NSMutableParagraphStyle(); paragraph.lineSpacing = 5
+  input.defaultParagraphStyle = paragraph; input.typingAttributes[.paragraphStyle] = paragraph
+  input.textContainerInset = NSSize(width: 2, height: 6)
   input.isVerticallyResizable = true; input.isHorizontallyResizable = false; input.autoresizingMask = [.width]
-  input.textContainer?.widthTracksTextView = true; input.textContainer?.containerSize = NSSize(width: 418, height: CGFloat.greatestFiniteMagnitude)
-  input.submit = { [weak self] in self?.translate() }; input.dismiss = { [weak self] in self?.dismiss() }
+  input.textContainer?.widthTracksTextView = true; input.textContainer?.containerSize = NSSize(width: 446, height: CGFloat.greatestFiniteMagnitude)
+  input.submit = { [weak self] in self?.translate() }; input.dismiss = { [weak self] in self?.dismiss() }; input.changed = { [weak self] in self?.updateInputState() }
+  input.setAccessibilityLabel("待翻译的原文"); input.setAccessibilityHelp("支持任意输入法。Command Return 翻译，Return 换行，Escape 关闭。")
   scroll.documentView = input; content.addSubview(scroll)
-  let targetLabel = NSTextField(labelWithString: "翻译为"); targetLabel.frame = NSRect(x: 462, y: 230, width: 150, height: 20); targetLabel.textColor = .secondaryLabelColor; content.addSubview(targetLabel)
-  language.frame = NSRect(x: 458, y: 192, width: 160, height: 30)
+  count.frame = NSRect(x: 312, y: 106, width: 164, height: 16); count.font = .monospacedDigitSystemFont(ofSize: 10, weight: .regular); count.textColor = UI.muted; count.alignment = .right; content.addSubview(count)
+  UI.label("目标语言", in: content, frame: NSRect(x: 516, y: 257, width: 180, height: 18), size: 12, weight: .medium, color: UI.muted)
   for value in TargetLanguage.all { language.addItem(withTitle: value.title); language.lastItem?.representedObject = value.code }
-  language.target = self; language.action = #selector(languageChanged); content.addSubview(language)
+  language.target = self; language.action = #selector(languageChanged)
+  UI.popup(language, in: content, frame: NSRect(x: 514, y: 205, width: 182, height: 42))
+  language.setAccessibilityLabel("目标语言")
   if let index = TargetLanguage.all.firstIndex(where: { $0.code == Preferences.language }) { language.selectItem(at: index) }
-  submit.frame = NSRect(x: 458, y: 138, width: 160, height: 38); submit.bezelStyle = .rounded; submit.target = self; submit.action = #selector(translate); content.addSubview(submit)
-  let hint = NSTextField(labelWithString: "⌘ Enter 确定 · Enter 换行 · Esc 关闭")
-  hint.frame = NSRect(x: 24, y: 98, width: 450, height: 20); hint.font = .systemFont(ofSize: 11); hint.textColor = .secondaryLabelColor; content.addSubview(hint)
-  progress.style = .spinning; progress.controlSize = .small; progress.frame = NSRect(x: 24, y: 58, width: 16, height: 16); progress.isDisplayedWhenStopped = false; content.addSubview(progress)
-  status.frame = NSRect(x: 48, y: 22, width: 560, height: 59); status.font = .systemFont(ofSize: 12); status.textColor = .secondaryLabelColor; content.addSubview(status)
-  copy.frame = NSRect(x: 458, y: 98, width: 160, height: 30); copy.bezelStyle = .rounded; copy.target = self; copy.action = #selector(showResult); copy.isHidden = true; content.addSubview(copy)
+  submit.frame = NSRect(x: 514, y: 145, width: 182, height: 46); submit.target = self; submit.action = #selector(translate); content.addSubview(submit)
+  UI.label("⌘ ↵ 翻译   ·   Esc 关闭", in: content, frame: NSRect(x: 517, y: 119, width: 179, height: 17), size: 10, color: UI.muted)
+  UI.label("↵ 换行", in: content, frame: NSRect(x: 42, y: 106, width: 160, height: 16), size: 10, color: UI.muted)
+  let separator = Surface(frame: NSRect(x: 24, y: 77, width: 672, height: 1), color: UI.line, radius: 0); content.addSubview(separator)
+  statusIcon.image = NSImage(systemSymbolName: "text.bubble", accessibilityDescription: nil); statusIcon.contentTintColor = UI.muted; statusIcon.frame = NSRect(x: 24, y: 43, width: 16, height: 16); content.addSubview(statusIcon)
+  progress.style = .spinning; progress.controlSize = .small; progress.frame = NSRect(x: 25, y: 43, width: 16, height: 16); progress.isDisplayedWhenStopped = false; content.addSubview(progress)
+  status.frame = NSRect(x: 48, y: 18, width: 510, height: 43); status.font = .systemFont(ofSize: 11); status.textColor = UI.muted; content.addSubview(status)
+  copy.frame = NSRect(x: 574, y: 26, width: 122, height: 34); copy.compact = true; copy.target = self; copy.action = #selector(showResult); copy.isHidden = true; content.addSubview(copy)
+  updateInputState()
  }
+ private func updateInputState() {
+  let length = input.string.unicodeScalars.count
+  count.stringValue = "\(length.formatted()) / 10,000"; count.textColor = length > 10000 ? UI.warning : UI.muted
+  submit.isEnabled = busy || (!input.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && length <= 10000)
+  input.needsDisplay = true
+ }
+
  @objc private func languageChanged() { Preferences.language = language.selectedItem?.representedObject as? String ?? "en" }
  @objc private func openFromMenu() { if !panel.isVisible { openPanel() } else { NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil) } }
  private func togglePanel() { if panel.isKeyWindow { dismiss() } else { openPanel() } }
- private func openPanel() {
-  cancelWork(); target = InsertionTarget.capture(); flowID = UUID()
+ private func openPanel(captureTarget: Bool = true) {
+  cancelWork()
+  if captureTarget { target = InsertionTarget.capture() }
+  resumeDraftFromSettings = false; flowID = UUID()
   if clearOnNextOpen { input.string = ""; clearOnNextOpen = false }
-  status.stringValue = target.map { "将回填到 \($0.app.localizedName ?? "原应用")。粘贴后译文保留在剪贴板。" } ?? "输入文字并选择目标语言；未确认目标时提供复制。"
+  updateInputState()
+  modelBadge.stringValue = Preferences.llm.current.model
+  modelBadge.toolTip = "\(Preferences.llm.current.provider.title) · \(Preferences.llm.current.model)"
+  status.textColor = UI.muted
+  status.stringValue = target.map { "翻译后回填到 \($0.app.localizedName ?? "原应用")，译文保留在剪贴板。" } ?? "输入你的想法，翻译后即可复制使用。"
   copy.isHidden = lastResult.isEmpty
   let screen = NSScreen.screens.first(where: { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) }) ?? NSScreen.main!
   let frame = screen.visibleFrame
@@ -87,7 +126,9 @@ import TranslationCore
   NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil); panel.makeFirstResponder(input)
  }
  private func setBusy(_ value: Bool) {
-  busy = value; submit.title = value ? "取消" : "确定"; input.isEditable = !value; language.isEnabled = !value
+  busy = value; submit.title = value ? "取消翻译" : "翻译 ↗"; input.isEditable = !value; language.isEnabled = !value
+  updateInputState()
+  statusIcon.isHidden = value
   if value { progress.startAnimation(nil) } else { progress.stopAnimation(nil) }
  }
  private func cancelWork() { flowID = UUID(); task?.cancel(); task = nil; session.cancel(); inserting = false; setBusy(false) }
@@ -98,7 +139,7 @@ import TranslationCore
   guard !input.string.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty, input.string.unicodeScalars.count <= 10000 else { status.stringValue = "请输入 1–10,000 个字符。"; return }
   let configuration = Preferences.llm.current
   let apiKey = Credentials.read(configuration: configuration) ?? ""
-  guard let endpoint = try? configuration.validated(apiKey: apiKey) else { settings.show(); return }
+  guard let endpoint = try? configuration.validated(apiKey: apiKey) else { showSettings(); return }
   if Preferences.consentEndpoint != configuration.credentialAccount {
    let alert = NSAlert(); alert.messageText = "允许发送文字进行翻译？"
    alert.informativeText = "确认后，你输入的文字将发送至 \(endpoint.host ?? "配置的模型服务")，使用模型 \(configuration.model)。API 费用由提供商按你的账户计费。原文和译文仅在本次运行期间保存在内存中。"
@@ -106,7 +147,7 @@ import TranslationCore
    guard alert.runModal() == .alertFirstButtonReturn else { return }; Preferences.consentEndpoint = configuration.credentialAccount
   }
   let text = input.string; let code = Preferences.language; let ticket = session.begin(); let flow = flowID; let savedTarget = target
-  setBusy(true); status.stringValue = "正在翻译… 可点击取消。"
+  setBusy(true); status.textColor = UI.accent; status.stringValue = "正在用 \(configuration.model) 翻译…"
   task = Task { [weak self] in
    guard let self else { return }
    do {
@@ -120,13 +161,14 @@ import TranslationCore
      self.clearOnNextOpen = true; self.status.stringValue = "已发出粘贴操作，译文保留在剪贴板。"
     } catch {
      guard self.flowID == flow, !Task.isCancelled else { return }
-     self.status.stringValue = error.localizedDescription
+     self.status.textColor = UI.warning; self.status.stringValue = error.localizedDescription
      self.panel.orderFrontRegardless() // Do not steal focus if the user is working elsewhere.
     }
     self.inserting = false; self.setBusy(false)
    } catch {
     guard self.flowID == flow, !Task.isCancelled else { return }
     self.session.cancel(); self.setBusy(false)
+    self.status.textColor = UI.warning
     self.status.stringValue = (error as? URLError)?.code == .timedOut ? "翻译超时，原文已保留。" : error.localizedDescription
    }
   }
@@ -138,13 +180,13 @@ import TranslationCore
  }
  @objc private func showResult() {
   guard !lastResult.isEmpty else { return }
-  let alert = NSAlert(); alert.messageText = "翻译结果"; alert.informativeText = "原文仍保留在输入框中。"
-  let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 430, height: 190)); scroll.hasVerticalScroller = true
-  let text = NSTextView(frame: scroll.bounds); text.isEditable = false; text.isRichText = false; text.string = lastResult; text.font = .systemFont(ofSize: 14); text.autoresizingMask = [.width]; text.isVerticallyResizable = true; scroll.documentView = text
-  alert.accessoryView = scroll; alert.addButton(withTitle: "复制译文"); alert.addButton(withTitle: "关闭")
-  if alert.runModal() == .alertFirstButtonReturn { copyResult() }
+  resultWindow.show(text: lastResult)
+
  }
- @objc private func showSettings() { cancelWork(); settings.show() }
+ @objc private func showSettings() {
+  resumeDraftFromSettings = panel.isVisible
+  cancelWork(); panel.orderOut(nil); settings.show()
+ }
  @objc private func quit() { cancelWork(); NSApp.terminate(nil) }
  func windowWillClose(_ notification: Notification) { if notification.object as? NSWindow === panel { cancelWork() } }
  func windowDidResignKey(_ notification: Notification) {
@@ -154,6 +196,7 @@ import TranslationCore
 @main struct TranslationInputMain {
  @MainActor static func main() {
   let app = NSApplication.shared
+  UI.applyAppearance()
   let delegate = AppDelegate()
   app.delegate = delegate
   withExtendedLifetime(delegate) { app.run() }

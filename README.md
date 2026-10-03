@@ -4,14 +4,18 @@
 
 客户端直接调用你选择的 LLM API，支持 OpenAI、Claude、DeepSeek、GLM、MiniMax、通义千问及自定义服务。填写自己的 API Key，调用费用由提供商按你的账户计费。
 
-采用 Swift + AppKit 开发，支持 macOS 14+，使用 MIT 许可证。当前版本为 0.2 开发版。
+采用 Swift + AppKit 开发，支持 macOS 14+，使用 MIT 许可证。当前版本为 0.3 开发版。
+
+![译入浅色输入窗口](docs/images/composer-light.png)
+
+支持跟随系统、浅色和深色外观。[深色预览](docs/images/composer-dark.png) · [设置页](docs/images/settings.png)
 
 ## 使用
 
 1. 打开设置，选择提供商，自动填入 API 地址、模型和接口协议。
-2. 填写 API Key，点击“保存模型配置”。切换提供商前请保存修改。
-3. 点击“开启自动回填权限…”，在系统设置中授权辅助功能。
-4. 在目标应用的输入位置按快捷键，输入文字，选择目标语言，点击确定或按 `Command + Enter`。
+2. 填写 API Key，点击“保存配置”。切换提供商前请保存修改。
+3. 点击“管理权限…”，在系统设置中授权辅助功能。
+4. 在目标应用的输入位置按快捷键，输入文字，选择目标语言，点击“翻译”或按 `Command + Enter`。
 
 默认快捷键为 `Option + Space`，可在设置中录制，成功后立即生效。`Enter` 换行，`Esc` 关闭；菜单栏和设置页也可打开输入框。
 
@@ -47,7 +51,7 @@ swift run --package-path macos CoreChecks
 python3 scripts/check-integration.py
 ```
 
-核心检查覆盖配置、请求解析和会话状态，HTTP 检查使用临时本地接口验证网络请求。真实模型与跨应用回填的验收进度见 [验证记录](docs/manual-testing.md)。
+核心检查覆盖配置、请求解析和会话状态，HTTP 检查使用临时本地接口验证网络请求。界面迭代见 [设计检查记录](docs/design-review.md)。真实模型与跨应用回填的验收进度见 [验证记录](docs/manual-testing.md)。
 
 构建输出为当前机器架构的 `.app`，默认使用 ad-hoc 开发签名。正式发布需稳定的 Bundle ID、Developer ID 签名和公证；`SIGN_IDENTITY` 可指定签名身份。
 
