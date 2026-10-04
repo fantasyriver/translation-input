@@ -49,7 +49,8 @@ import TranslationCore
   for (title, action, key) in [("撤销", Selector(("undo:")), "z"), ("剪切", #selector(NSText.cut(_:)), "x"), ("复制", #selector(NSText.copy(_:)), "c"), ("粘贴", #selector(NSText.paste(_:)), "v"), ("全选", #selector(NSText.selectAll(_:)), "a")] { edit.addItem(withTitle: title, action: action, keyEquivalent: key) }
   NSApp.mainMenu = mainMenu
   item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-  item.button?.image = NSImage(systemSymbolName: "character.bubble", accessibilityDescription: "译入")
+  item.button?.image = MenuBarIcon.make()
+  item.button?.toolTip = "译入 · 翻译并输入"
   let menu = NSMenu()
   func entry(_ title: String, _ action: Selector, _ key: String = "") { let row = NSMenuItem(title: title, action: action, keyEquivalent: key); row.target = self; menu.addItem(row) }
   entry("打开翻译输入框", #selector(openFromMenu)); entry("复制上次译文", #selector(copyResult)); menu.addItem(.separator())
@@ -113,10 +114,22 @@ import TranslationCore
 
  @objc private func languageChanged() { Preferences.language = language.selectedItem?.representedObject as? String ?? "en"; resultView.markPrevious() }
  @objc private func openFromMenu() { if !panel.isVisible { openPanel() } else { NSApp.activate(ignoringOtherApps: true); panel.makeKeyAndOrderFront(nil) } }
- private func togglePanel() { if panel.isKeyWindow { dismiss() } else { openPanel() } }
- private func openPanel(captureTarget: Bool = true) {
+ private func togglePanel() { if panel.isKeyWindow { dismiss() } else { openPanel(startFresh: true) } }
+ private func openPanel(captureTarget: Bool = true, startFresh: Bool = false) {
   cancelWork()
   if captureTarget { target = InsertionTarget.capture() }
+  if startFresh {
+   input.unmarkText(); input.string = ""; input.undoManager?.removeAllActions()
+   input.setSelectedRange(NSRange(location: 0, length: 0))
+   input.scrollRangeToVisible(NSRange(location: 0, length: 0))
+   if !resultView.isHidden {
+    let old = panel.frame
+    resultView.isHidden = true
+    composer.setFrameOrigin(.zero)
+    panel.setFrame(NSRect(x: old.minX, y: old.minY + 204, width: old.width, height: old.height - 204), display: false)
+   }
+   resultView.show(text: "", language: "")
+  }
   resumeDraftFromSettings = false; flowID = UUID()
   updateInputState()
   modelBadge.stringValue = Preferences.llm.current.model
@@ -171,7 +184,9 @@ import TranslationCore
     self.inserting = false; self.setBusy(false); self.refreshAutoFill()
     self.status.textColor = outcome.copied ? UI.accent : UI.warning
     switch outcome.insertion {
-    case .sent: self.status.stringValue = "已发送回填操作，译文已复制。"
+    case .sent:
+     self.status.stringValue = "已发送回填操作，译文已复制。"
+     self.panel.orderOut(nil)
     case .skipped: self.status.stringValue = outcome.copied ? "翻译完成，译文已自动复制。" : "翻译完成，复制失败，请选择下方译文手动复制。"
     case .failed: self.status.stringValue = outcome.copied ? "译文已复制，请在目标位置粘贴。" : "自动回填和复制未完成，请选择下方译文手动复制。"
     }
