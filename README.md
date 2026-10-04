@@ -4,7 +4,17 @@
 
 客户端直接调用你选择的 LLM API，支持 OpenAI、Claude、DeepSeek、GLM、MiniMax、通义千问及自定义服务。填写自己的 API Key，调用费用由提供商按你的账户计费。
 
-采用 Swift + AppKit 开发，支持 macOS 14+，使用 MIT 许可证。当前版本为 0.4 开发版。
+采用 Swift + AppKit 开发，支持 macOS 14+，使用 MIT 许可证。当前测试版为 **v0.4.3**。
+
+## 下载与安装
+
+**[下载 v0.4.3 · Apple Silicon](https://github.com/fantasyriver/translation-input/releases/download/v0.4.3/TranslationInput-v0.4.3-macos-arm64.zip)** · [版本说明与校验文件](https://github.com/fantasyriver/translation-input/releases/tag/v0.4.3) · [完整安装指南](docs/installation.md)
+
+适用于 **M 系列芯片、macOS 14 或以上**。下载 ZIP 并解压，将 `TranslationInput.app` 拖入“应用程序”，再双击打开。启动后通过菜单栏的双向箭头与插入光标图标进入设置。
+
+这是使用临时开发签名的测试版，尚未经过 Apple 公证。若 macOS 提示无法验证开发者，确认安装包来自本仓库后，在“系统设置 → 隐私与安全性”找到本应用的提示，点击“仍要打开”。具体操作见 [首次打开](docs/installation.md#首次打开)。
+
+更新前从菜单栏退出译入，再替换“应用程序”中的旧版本。更新后若自动回填失效，请按 [辅助功能授权](docs/installation.md#辅助功能授权与更新后的修复) 重新添加应用。
 
 ![译入浅色输入窗口](docs/images/inline-light.png)
 
